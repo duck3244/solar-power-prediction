@@ -1,0 +1,49 @@
+# CNN-LSTM 태양광 발전 기반 전력 수요 예측 시스템
+# 필수 패키지 목록
+
+# 딥러닝 프레임워크
+tensorflow>=2.10.0
+keras>=2.10.0
+
+# 데이터 처리 및 분석
+pandas>=1.5.0
+numpy>=1.21.0
+scikit-learn>=1.1.0
+
+# 시각화
+matplotlib>=3.5.0
+seaborn>=0.11.0
+plotly>=5.10.0
+
+# 통계 분석
+scipy>=1.9.0
+statsmodels>=0.13.0
+
+# 파일 처리
+openpyxl>=3.0.0
+xlrd>=2.0.0
+
+# 유틸리티
+tqdm>=4.64.0
+joblib>=1.1.0
+
+# 선택적 패키지 (시각화 개선용)
+kaleido>=0.2.1  # plotly static image export
+pillow>=9.0.0   # 이미지 처리
+
+# Jupyter 환경 (개발용)
+jupyter>=1.0.0
+ipython>=8.0.0
+notebook>=6.4.0
+
+# 모델 구조 시각화 (선택적)
+graphviz>=0.20.0
+pydot>=1.4.0
+
+# 성능 최적화 (선택적)
+psutil>=5.9.0   # 시스템 모니터링
+
+# 테스트 및 품질 관리 (개발용)
+pytest>=7.0.0
+flake8>=5.0.0
+black>=22.0.0

@@ -1,0 +1,153 @@
+{
+  "_comment": "CNN-LSTM 태양광 발전 기반 전력 수요 예측 시스템 설정 파일",
+  "_version": "1.0.0",
+  "_description": "이 설정 파일은 모든 주요 파라미터를 포함합니다. 필요에 따라 수정하여 사용하세요.",
+  
+  "data_settings": {
+    "_comment": "데이터 관련 설정",
+    "generation_file": "Plant_1_Generation_Data.csv",
+    "weather_file": "Plant_1_Weather_Sensor_Data.csv",
+    "use_synthetic_data": false,
+    "_note_synthetic": "실제 파일이 없으면 자동으로 합성 데이터를 생성합니다"
+  },
+  
+  "feature_engineering": {
+    "_comment": "특성 엔지니어링 관련 설정",
+    "sequence_length": 24,
+    "feature_selection_method": "correlation",
+    "normalization_method": "minmax",
+    "_available_methods": ["correlation", "variance", "all"],
+    "_available_normalization": ["minmax", "standard"]
+  },
+  
+  "model_architecture": {
+    "_comment": "모델 구조 설정",
+    "model_type": "advanced",
+    "cnn_filters": [64, 64, 32],
+    "lstm_units": [128, 64],
+    "dense_units": [128, 64, 32],
+    "dropout_rate": 0.3,
+    "use_attention": true,
+    "use_bidirectional": true,
+    "_available_model_types": ["basic", "advanced", "transformer"],
+    "_note_filters": "CNN 필터 수는 점진적으로 감소시키는 것을 권장",
+    "_note_lstm": "LSTM 유닛 수도 레이어가 깊어질수록 감소"
+  },
+  
+  "training_parameters": {
+    "_comment": "학습 관련 파라미터",
+    "epochs": 100,
+    "batch_size": 32,
+    "learning_rate": 0.001,
+    "optimizer": "adam",
+    "loss": "huber",
+    "early_stopping_patience": 15,
+    "_available_optimizers": ["adam", "rmsprop", "sgd"],
+    "_available_losses": ["mse", "mae", "huber"],
+    "_note_huber": "Huber loss는 이상치에 robust한 특성을 가집니다"
+  },
+  
+  "data_splitting": {
+    "_comment": "데이터 분할 설정",
+    "train_ratio": 0.7,
+    "val_ratio": 0.15,
+    "test_ratio": 0.15,
+    "shuffle": false,
+    "_note_shuffle": "시계열 데이터이므로 shuffle=false 권장"
+  },
+  
+  "system_settings": {
+    "_comment": "시스템 관련 설정",
+    "random_seed": 42,
+    "verbose": 1,
+    "save_model": true,
+    "save_results": true,
+    "output_dir": "results",
+    "_verbose_levels": "0: 조용함, 1: 진행상황, 2: 상세정보"
+  },
+  
+  "advanced_features": {
+    "_comment": "고급 기능 설정",
+    "run_cross_validation": false,
+    "run_hyperparameter_tuning": false,
+    "run_ensemble": false,
+    "cv_folds": 5,
+    "ensemble_models": 3,
+    "_note_cv": "교차검증은 시간이 많이 소요됩니다",
+    "_note_tuning": "하이퍼파라미터 튜닝은 매우 오래 걸릴 수 있습니다"
+  },
+  
+  "hyperparameter_search": {
+    "_comment": "하이퍼파라미터 튜닝 시 사용할 탐색 공간",
+    "param_grid": {
+      "cnn_filters": [
+        [32, 16],
+        [64, 32],
+        [64, 64, 32],
+        [128, 64, 32]
+      ],
+      "lstm_units": [
+        [32, 16],
+        [64, 32],
+        [128, 64],
+        [256, 128]
+      ],
+      "dropout_rate": [0.1, 0.2, 0.3, 0.4, 0.5],
+      "dense_units": [
+        [32, 16],
+        [64, 32],
+        [128, 64],
+        [256, 128]
+      ]
+    },
+    "scoring": "rmse",
+    "max_tuning_epochs": 30,
+    "_available_scoring": ["rmse", "mae", "r2"]
+  },
+  
+  "visualization": {
+    "_comment": "시각화 관련 설정",
+    "create_plots": true,
+    "save_plots": true,
+    "create_interactive_dashboard": true,
+    "plot_style": "seaborn-v0_8",
+    "figure_dpi": 300,
+    "_available_styles": ["seaborn-v0_8", "ggplot", "bmh", "classic"]
+  },
+  
+  "performance_targets": {
+    "_comment": "목표 성능 지표 (참고용)",
+    "target_rmse": 1000.0,
+    "target_mae": 700.0,
+    "target_r2": 0.85,
+    "target_mape": 15.0,
+    "_note": "이 값들은 참고용이며 실제 학습에 영향을 주지 않습니다"
+  },
+  
+  "resource_constraints": {
+    "_comment": "리소스 제약 관련 설정",
+    "max_memory_usage_gb": 8,
+    "use_gpu": true,
+    "gpu_memory_growth": true,
+    "_note_memory": "메모리 부족 시 batch_size나 sequence_length 감소",
+    "_note_gpu": "GPU가 없으면 자동으로 CPU 사용"
+  },
+  
+  "debugging": {
+    "_comment": "디버깅 및 개발 관련 설정",
+    "debug_mode": false,
+    "log_level": "INFO",
+    "save_intermediate_results": false,
+    "profile_training": false,
+    "_log_levels": ["DEBUG", "INFO", "WARNING", "ERROR"]
+  },
+  
+  "deployment": {
+    "_comment": "배포 관련 설정",
+    "model_name": "solar_power_predictor",
+    "model_version": "1.0.0",
+    "export_format": ["h5", "savedmodel"],
+    "create_api": false,
+    "api_port": 5000
+  }
+}
