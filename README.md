@@ -20,10 +20,6 @@
 
 ### 1. 환경 설정
 ```bash
-# 저장소 클론 및 이동
-git clone <repository-url>
-cd solar-power-prediction
-
 # 가상환경 생성 및 활성화
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
@@ -291,3 +287,5 @@ def predict():
     prediction = model.predict(data['features'])
     return jsonify({'prediction': prediction.tolist()})
 ```
+
+---
