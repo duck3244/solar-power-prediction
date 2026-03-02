@@ -9,9 +9,6 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import warnings
-
-warnings.filterwarnings('ignore')
 
 # 한글 폰트 설정
 plt.rcParams['font.family'] = 'DejaVu Sans'
@@ -31,7 +28,7 @@ class ResultVisualizer:
         """
         try:
             plt.style.use(style)
-        except:
+        except Exception:
             plt.style.use('default')
 
         self.figsize = figsize
@@ -399,7 +396,7 @@ class ResultVisualizer:
                 axes[1, 1].set_title('Average power generation by time zone')
                 axes[1, 1].grid(True, alpha=0.3)
                 axes[1, 1].set_xticks(range(0, 24, 4))
-            except:
+            except Exception:
                 axes[1, 1].text(0.5, 0.5, 'No hourly pattern\nanalysis possible', ha='center', va='center',
                                 transform=axes[1, 1].transAxes, fontsize=14, color='gray')
                 axes[1, 1].axis('off')
@@ -597,7 +594,7 @@ class ResultVisualizer:
             # Jupyter에서 실행 시 표시
             try:
                 fig.show()
-            except:
+            except Exception:
                 print("💡 대시보드가 HTML 파일로 저장되었습니다.")
 
         except ImportError:
@@ -733,7 +730,7 @@ class ResultVisualizer:
                             'r-', alpha=0.8, linewidth=2,
                             label=f'Trend line (slope: {z[0]:.4f})')
             axes[0, 0].legend()
-        except:
+        except Exception:
             pass
 
         axes[0, 0].set_xlabel('Predicted value (kW)')

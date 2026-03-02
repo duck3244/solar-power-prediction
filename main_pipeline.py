@@ -12,7 +12,8 @@ from datetime import datetime
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import warnings
 import numpy as np
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 # 로컬 모듈 임포트
 from data_loader import SolarDataLoader
@@ -31,7 +32,9 @@ class SolarPowerPredictionPipeline:
         Args:
             config (dict): 설정 딕셔너리
         """
-        self.config = config or self._default_config()
+        self.config = self._default_config()
+        if config:
+            self.config.update(config)
         self.loader = SolarDataLoader()
         self.engineer = SolarFeatureEngineer()
         self.builder = CNNLSTMBuilder()
@@ -94,19 +97,30 @@ class SolarPowerPredictionPipeline:
     
     def load_config(self, config_file):
         """
-        설정 파일 로드
-        
+        설정 파일 로드 (중첩 구조의 JSON도 평탄화하여 적용)
+
         Args:
             config_file (str): 설정 파일 경로
         """
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 loaded_config = json.load(f)
-            
-            # 기본 설정과 병합
-            self.config.update(loaded_config)
+
+            # 중첩 구조 평탄화 (_로 시작하는 주석 키 제외)
+            flat_config = {}
+            for key, value in loaded_config.items():
+                if key.startswith('_'):
+                    continue
+                if isinstance(value, dict):
+                    for sub_key, sub_value in value.items():
+                        if not sub_key.startswith('_'):
+                            flat_config[sub_key] = sub_value
+                else:
+                    flat_config[key] = value
+
+            self.config.update(flat_config)
             print(f"✅ 설정 파일 로드 완료: {config_file}")
-            
+
         except Exception as e:
             print(f"❌ 설정 파일 로드 실패: {e}")
             print("💡 기본 설정을 사용합니다.")
@@ -139,6 +153,8 @@ class SolarPowerPredictionPipeline:
         if self.config['use_synthetic_data']:
             print("📊 합성 데이터 사용")
             gen_df, weather_df = self.loader.generate_synthetic_data()
+            gen_df = self.loader.parse_datetime(gen_df, format_type='generation')
+            weather_df = self.loader.parse_datetime(weather_df, format_type='weather')
             processed_df = self.loader.merge_data(
                 self.loader.aggregate_hourly_generation(gen_df),
                 self.loader.aggregate_hourly_weather(weather_df)
@@ -541,14 +557,20 @@ class SolarPowerPredictionPipeline:
         start_time = datetime.now()
         
         try:
-            # 1. 하이퍼파라미터 튜닝 (선택사항)
+            # 재현성을 위한 시드 설정
+            seed = self.config.get('random_seed', 42)
+            np.random.seed(seed)
+            import tensorflow as tf
+            tf.random.set_seed(seed)
+
+            # 1. 데이터 파이프라인
+            self.run_data_pipeline()
+
+            # 2. 하이퍼파라미터 튜닝 (선택사항, 데이터 로드 후 실행)
             if self.config.get('run_hyperparameter_tuning', False):
                 tuning_results = self.run_hyperparameter_tuning()
                 print(f"🏆 최적 하이퍼파라미터 적용됨")
-            
-            # 2. 데이터 파이프라인
-            self.run_data_pipeline()
-            
+
             # 3. 모델 파이프라인
             self.run_model_pipeline()
             

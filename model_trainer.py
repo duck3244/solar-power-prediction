@@ -12,9 +12,6 @@ from sklearn.model_selection import train_test_split, TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import tensorflow as tf
 from tensorflow.keras.callbacks import History
-import warnings
-
-warnings.filterwarnings('ignore')
 
 
 class ModelTrainer:

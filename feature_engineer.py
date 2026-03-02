@@ -7,8 +7,6 @@ feature_engineer.py
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-import warnings
-warnings.filterwarnings('ignore')
 
 class SolarFeatureEngineer:
     """태양광 발전 데이터 특성 엔지니어링 클래스"""
@@ -367,7 +365,7 @@ class SolarFeatureEngineer:
         print(f"📏 특성 정규화 중 (method: {method})...")
         
         # 결측값 처리
-        df_clean = df[feature_cols + [target_col]].fillna(method='ffill').fillna(method='bfill')
+        df_clean = df[feature_cols + [target_col]].ffill().bfill()
         
         # 스케일러 선택
         if method == 'standard':
@@ -537,7 +535,7 @@ class SolarFeatureEngineer:
         df = self.create_weather_interaction_features(df)
         
         # 선택된 특성만 추출하고 정규화
-        df_clean = df[self.feature_columns].fillna(method='ffill').fillna(method='bfill')
+        df_clean = df[self.feature_columns].ffill().bfill()
         features_normalized = self.feature_scaler.transform(df_clean)
         
         return features_normalized

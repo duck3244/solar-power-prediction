@@ -190,29 +190,52 @@ class CNNLSTMBuilder:
                     name=f'lstm_{i+1}'
                 )(lstm_branch)
         
-        # 마지막 LSTM 레이어
-        if use_bidirectional:
-            lstm_output = Bidirectional(
-                LSTM(
-                    units=lstm_units[-1]//2,
-                    dropout=dropout_rate,
-                    recurrent_dropout=dropout_rate
-                ),
-                name=f'bi_lstm_{len(lstm_units)}'
-            )(lstm_branch)
-        else:
-            lstm_output = LSTM(
-                units=lstm_units[-1],
-                dropout=dropout_rate,
-                recurrent_dropout=dropout_rate,
-                name=f'lstm_{len(lstm_units)}'
-            )(lstm_branch)
-        
-        # Attention 메커니즘 (옵션)
+        # 마지막 LSTM 레이어 + Attention 메커니즘
         if use_attention:
-            # Self-attention을 위한 임시 구현
-            attention_output = Dense(lstm_units[-1], activation='softmax', name='attention_weights')(lstm_output)
-            lstm_output = tf.keras.layers.Multiply(name='attention_applied')([lstm_output, attention_output])
+            # Attention 사용 시 시퀀스 출력 필요 (return_sequences=True)
+            if use_bidirectional:
+                lstm_seq = Bidirectional(
+                    LSTM(
+                        units=lstm_units[-1]//2,
+                        return_sequences=True,
+                        dropout=dropout_rate,
+                        recurrent_dropout=dropout_rate
+                    ),
+                    name=f'bi_lstm_{len(lstm_units)}'
+                )(lstm_branch)
+            else:
+                lstm_seq = LSTM(
+                    units=lstm_units[-1],
+                    return_sequences=True,
+                    dropout=dropout_rate,
+                    recurrent_dropout=dropout_rate,
+                    name=f'lstm_{len(lstm_units)}'
+                )(lstm_branch)
+
+            # 각 타임스텝에 대한 attention score 계산 → softmax → 가중합
+            attention_scores = Dense(1, activation='tanh', name='attention_score')(lstm_seq)
+            attention_weights = tf.keras.layers.Softmax(axis=1, name='attention_softmax')(attention_scores)
+            context = tf.keras.layers.Multiply(name='attention_applied')([lstm_seq, attention_weights])
+            lstm_output = tf.keras.layers.Lambda(
+                lambda x: tf.reduce_sum(x, axis=1), name='attention_reduce'
+            )(context)
+        else:
+            if use_bidirectional:
+                lstm_output = Bidirectional(
+                    LSTM(
+                        units=lstm_units[-1]//2,
+                        dropout=dropout_rate,
+                        recurrent_dropout=dropout_rate
+                    ),
+                    name=f'bi_lstm_{len(lstm_units)}'
+                )(lstm_branch)
+            else:
+                lstm_output = LSTM(
+                    units=lstm_units[-1],
+                    dropout=dropout_rate,
+                    recurrent_dropout=dropout_rate,
+                    name=f'lstm_{len(lstm_units)}'
+                )(lstm_branch)
         
         # 브랜치 융합
         merged = Concatenate(name='final_concat')([cnn_combined, lstm_output])
@@ -451,7 +474,9 @@ class CNNLSTMBuilder:
         callbacks.append(checkpoint)
         
         # CSV Logger
-        csv_logger = CSVLogger('training_log.csv', append=True)
+        import os
+        log_dir = os.path.dirname(save_path) or '.'
+        csv_logger = CSVLogger(os.path.join(log_dir, 'training_log.csv'), append=True)
         callbacks.append(csv_logger)
         
         print(f"✅ 콜백 함수 생성 완료: {len(callbacks)}개")

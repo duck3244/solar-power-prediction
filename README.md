@@ -29,15 +29,15 @@ pip install -r requirements.txt
 ```
 
 ### 2. 데이터 준비
-```bash
-# 첨부된 CSV 파일을 프로젝트 루트에 배치
+
+첨부된 CSV 파일을 프로젝트 루트에 배치합니다.
+```
 ├── Plant_1_Generation_Data.csv
 ├── Plant_1_Weather_Sensor_Data.csv
 └── (기타 파일들...)
-
-## 사용한 데이터
- https://www.kaggle.com/datasets/anikannal/solar-power-generation-data?resource=download
 ```
+
+> **데이터 출처**: https://www.kaggle.com/datasets/anikannal/solar-power-generation-data?resource=download
 
 ### 3. 기본 실행
 ```bash
@@ -64,9 +64,10 @@ solar-power-prediction/
 ├── model_trainer.py           # 모델 학습 및 평가
 ├── visualizer.py              # 결과 시각화
 ├── main_pipeline.py           # 전체 실행 파이프라인
+├── run_example.py             # 실행 예제 (메뉴 기반)
 ├── requirements.txt           # 필수 패키지 목록
 ├── README.md                  # 프로젝트 문서
-├── config_sample.json         # 샘플 설정 파일
+├── config_sample.json         # 샘플 설정 파일 (중첩 구조)
 └── results/                   # 결과 출력 디렉토리
     ├── models/               # 학습된 모델
     ├── plots/                # 생성된 그래프
@@ -94,8 +95,8 @@ solar-power-prediction/
 - **기능**: 다양한 CNN-LSTM 모델 아키텍처 제공
 - **모델 타입**:
   - **Basic**: 표준 CNN-LSTM
-  - **Advanced**: Bidirectional + Attention
-  - **Transformer**: Multi-head Attention 포함
+  - **Advanced**: Bidirectional + Time-step Attention (Multi-scale CNN)
+  - **Transformer**: Multi-head Self-Attention 포함
 
 ### 🏃 model_trainer.py
 - **기능**: 모델 학습, 평가, 교차검증
@@ -116,15 +117,20 @@ solar-power-prediction/
 ### 🔄 main_pipeline.py
 - **기능**: 전체 시스템 통합 실행
 - **파이프라인**:
-  1. 데이터 로드 및 전처리
-  2. 특성 엔지니어링
-  3. 모델 구축 및 학습
-  4. 성능 평가 및 시각화
-  5. 결과 저장
+  1. 시드 설정 (재현성 보장)
+  2. 데이터 로드 및 전처리
+  3. 하이퍼파라미터 튜닝 (선택)
+  4. 모델 구축 및 학습
+  5. 성능 평가 및 시각화
+  6. 앙상블 (선택)
+  7. 결과 저장
 
 ## ⚙️ 설정 옵션
 
 ### config.json 예시
+
+설정 파일은 **평탄(flat) 구조**와 **중첩(nested) 구조** 모두 지원합니다. 중첩 구조 사용 시 `_`로 시작하는 주석 키는 자동으로 무시됩니다. 자세한 중첩 구조 예시는 `config_sample.json`을 참고하세요.
+
 ```json
 {
   "model_type": "advanced",
@@ -155,18 +161,31 @@ Options:
 
 ## 📈 성능 지표
 
-### 예상 성능
-- **RMSE**: 500-1,500 kW
-- **MAE**: 300-1,000 kW  
-- **R²**: 0.75-0.95
-- **MAPE**: 8-15%
+### 실측 성능 (Plant_1 데이터 기준)
 
-### 모델 비교
-| 모델 | RMSE | MAE | R² | 학습시간 |
-|------|------|-----|----|---------| 
-| Basic CNN-LSTM | 1,200 | 800 | 0.82 | 15분 |
-| Advanced CNN-LSTM | 950 | 650 | 0.88 | 25분 |
-| Transformer Hybrid | 850 | 600 | 0.91 | 35분 |
+Advanced CNN-LSTM (Bidirectional + Time-step Attention) 모델의 실제 학습 결과입니다.
+
+| 지표 | 값 |
+|------|-----|
+| **RMSE** | 4,387 kW |
+| **MAE** | 3,398 kW |
+| **R²** | 0.7514 |
+| **MAPE** | 75.92% |
+| **Direction Accuracy** | 51.42% |
+
+### 학습 조건
+- **데이터**: 1,647 시퀀스 (66개 특성, 시퀀스 길이 24)
+- **모델**: Advanced CNN-LSTM (Bidirectional + Time-step Attention)
+- **학습 설정**: Epochs 100 (조기 종료), Batch Size 32, Learning Rate 0.001
+- **손실 함수**: Huber Loss / **옵티마이저**: Adam
+- **데이터 분할**: Train 70% / Validation 15% / Test 15%
+
+### 모델 타입 비교 (참고)
+| 모델 | 특징 | 복잡도 |
+|------|------|--------|
+| Basic CNN-LSTM | 표준 CNN + LSTM 구조 | 낮음 |
+| Advanced CNN-LSTM | Multi-scale CNN + Bidirectional LSTM + Time-step Attention | 중간 |
+| Transformer Hybrid | Multi-head Self-Attention + CNN-LSTM 결합 | 높음 |
 
 ## 🔧 고급 사용법
 
@@ -255,15 +274,14 @@ python main_pipeline.py --synthetic
 ### 출력 파일들
 ```
 results/
-├── final_model_20250101_123456.h5      # 학습된 모델
-├── results_metrics_20250101_123456.json # 성능 지표
-├── results_predictions_20250101_123456.csv # 예측 결과
-├── results_history_20250101_123456.csv  # 학습 이력
-├── summary_20250101_123456.json         # 전체 요약
-└── plots/                              # 생성된 그래프들
-    ├── performance_dashboard.png
-    ├── prediction_analysis.png
-    └── interactive_dashboard.html
+├── best_model.h5                                   # 최적 모델 (조기 종료 기준)
+├── final_model_<timestamp>.h5                      # 최종 학습 모델
+├── results_<timestamp>_metrics_<timestamp>.json    # 성능 지표
+├── results_<timestamp>_predictions_<timestamp>.csv # 예측 결과
+├── results_<timestamp>_history_<timestamp>.csv     # 학습 이력
+├── summary_<timestamp>.json                        # 전체 요약 (설정 + 결과)
+├── training_log.csv                                # 에폭별 학습 로그
+└── interactive_dashboard.html                      # 인터랙티브 대시보드
 ```
 
 ### 성능 해석
@@ -276,15 +294,17 @@ results/
 ```python
 # Flask API 예제
 from flask import Flask, request, jsonify
-import joblib
+import tensorflow as tf
+import numpy as np
 
 app = Flask(__name__)
-model = joblib.load('trained_model.pkl')
+model = tf.keras.models.load_model('results/best_model.h5')
 
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
-    prediction = model.predict(data['features'])
+    features = np.array(data['features']).reshape(1, *model.input_shape[1:])
+    prediction = model.predict(features)
     return jsonify({'prediction': prediction.tolist()})
 ```
 
