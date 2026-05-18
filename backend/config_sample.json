@@ -146,7 +146,7 @@
     "_comment": "배포 관련 설정",
     "model_name": "solar_power_predictor",
     "model_version": "1.0.0",
-    "export_format": ["h5", "savedmodel"],
+    "export_format": ["keras", "savedmodel"],
     "create_api": false,
     "api_port": 5000
   }

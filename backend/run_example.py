@@ -225,33 +225,35 @@ def run_individual_modules_test():
         })
         
         engineer = SolarFeatureEngineer()
-        X, y, features, scalers = engineer.feature_engineering_pipeline(
+        splits, features, scalers = engineer.feature_engineering_pipeline(
             test_data, sequence_length=12
         )
-        print(f"✅ 특성 엔지니어링: {X.shape[0]} 시퀀스, {len(features)} 특성")
-        
+        X_train, y_train = splits['X_train'], splits['y_train']
+        X_val, y_val = splits['X_val'], splits['y_val']
+        X_test, y_test = splits['X_test'], splits['y_test']
+        print(f"✅ 특성 엔지니어링: train={X_train.shape[0]} 시퀀스, {len(features)} 특성")
+
         # 3. 모델 빌더 테스트
         print("\n3️⃣ 모델 빌더 테스트...")
         from cnn_lstm_model import CNNLSTMBuilder
-        
+
         builder = CNNLSTMBuilder()
-        
+
         # 기본 모델
-        basic_model = builder.build_basic_cnn_lstm(X.shape[1:])
+        basic_model = builder.build_basic_cnn_lstm(X_train.shape[1:])
         basic_model = builder.compile_model(basic_model)
         print(f"✅ 기본 CNN-LSTM 모델: {basic_model.count_params():,} 파라미터")
-        
+
         # 고급 모델
-        advanced_model = builder.build_advanced_cnn_lstm(X.shape[1:])
+        advanced_model = builder.build_advanced_cnn_lstm(X_train.shape[1:])
         advanced_model = builder.compile_model(advanced_model)
         print(f"✅ 고급 CNN-LSTM 모델: {advanced_model.count_params():,} 파라미터")
-        
+
         # 4. 트레이너 테스트
         print("\n4️⃣ 모델 트레이너 테스트...")
         from model_trainer import ModelTrainer
-        
+
         trainer = ModelTrainer()
-        X_train, X_val, X_test, y_train, y_val, y_test = trainer.prepare_train_data(X, y)
         print(f"✅ 데이터 분할: 훈련({len(X_train)}), 검증({len(X_val)}), 테스트({len(X_test)})")
         
         # 간단한 학습 테스트 (1 에포크)

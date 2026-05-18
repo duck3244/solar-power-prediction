@@ -90,7 +90,7 @@ class ModelTrainer:
 
     def train_model(self, model, X_train, y_train, X_val, y_val,
                     epochs=100, batch_size=32, callbacks=None,
-                    verbose=1, validation_freq=1):
+                    verbose=1, validation_freq=1, shuffle=False):
         """
         모델 학습
 
@@ -105,6 +105,7 @@ class ModelTrainer:
             callbacks (list): 콜백 함수 리스트
             verbose (int): 출력 레벨
             validation_freq (int): 검증 주기
+            shuffle (bool): 시계열에서는 False 권장 (기본값)
 
         Returns:
             tf.keras.callbacks.History: 학습 이력
@@ -123,7 +124,7 @@ class ModelTrainer:
             callbacks=callbacks,
             verbose=verbose,
             validation_freq=validation_freq,
-            shuffle=True
+            shuffle=shuffle,
         )
 
         self.history = history
@@ -164,12 +165,12 @@ class ModelTrainer:
         mae = mean_absolute_error(y_true, y_pred)
         r2 = r2_score(y_true, y_pred)
 
-        # MAPE 계산 (0으로 나누기 방지)
+        # MAPE 계산 (0으로 나누기 방지; 모두 0이면 NaN — JSON 직렬화 안전)
         mask = y_true != 0
         if mask.any():
-            mape = np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100
+            mape = float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
         else:
-            mape = np.inf
+            mape = float('nan')
 
         # 방향성 정확도 (Direction Accuracy)
         if len(y_true) > 1:
@@ -203,15 +204,20 @@ class ModelTrainer:
 
         return metrics, y_true, y_pred
 
-    def cross_validate(self, model_builder, X, y, cv_folds=5, **model_params):
+    def cross_validate(self, model_builder, X, y, cv_folds=5,
+                       builder=None, loss='huber', optimizer='adam',
+                       learning_rate=0.001, **model_params):
         """
         시계열 교차 검증
 
         Args:
-            model_builder (function): 모델 생성 함수
+            model_builder (function): 모델 생성 함수 (uncompiled 모델 반환)
             X (np.array): 입력 데이터
             y (np.array): 타겟 데이터
             cv_folds (int): 교차 검증 폴드 수
+            builder (CNNLSTMBuilder): compile_model을 호출할 빌더 인스턴스.
+                None이면 fold 내부에서 기본 compile만 사용.
+            loss, optimizer, learning_rate: 컴파일 옵션
             **model_params: 모델 생성 파라미터
 
         Returns:
@@ -231,16 +237,24 @@ class ModelTrainer:
             X_train_cv, X_test_cv = X[train_idx], X[test_idx]
             y_train_cv, y_test_cv = y[train_idx], y[test_idx]
 
-            # 모델 생성 및 컴파일
+            # 모델 생성
             model = model_builder(input_shape=X.shape[1:], **model_params)
+            # 컴파일 (model_builder는 uncompiled 모델을 반환하므로 필수)
+            if builder is not None:
+                model = builder.compile_model(
+                    model, optimizer=optimizer,
+                    learning_rate=learning_rate, loss=loss,
+                )
+            else:
+                model.compile(optimizer=optimizer, loss=loss)
 
-            # 학습 (적은 에포크로 빠르게)
+            # 학습 (시계열이므로 셔플 금지)
             model.fit(
                 X_train_cv, y_train_cv,
                 epochs=20,
                 batch_size=32,
                 verbose=0,
-                validation_split=0.2
+                shuffle=False,
             )
 
             # 평가
@@ -250,9 +264,10 @@ class ModelTrainer:
             mae = mean_absolute_error(y_test_cv, y_pred)
             r2 = r2_score(y_test_cv, y_pred)
 
-            # MAPE 계산
+            # MAPE 계산 (모든 y_true=0이면 NaN — 직렬화 안전)
             mask = y_test_cv != 0
-            mape = np.mean(np.abs((y_test_cv[mask] - y_pred[mask]) / y_test_cv[mask])) * 100 if mask.any() else np.inf
+            mape = (np.mean(np.abs((y_test_cv[mask] - y_pred[mask]) / y_test_cv[mask])) * 100
+                    if mask.any() else float('nan'))
 
             cv_scores['RMSE'].append(rmse)
             cv_scores['MAE'].append(mae)
@@ -525,17 +540,20 @@ class ModelTrainer:
         # 1. 평가 지표 저장
         metrics_file = f"{filepath_prefix}_metrics_{timestamp}.json"
         with open(metrics_file, 'w') as f:
-            # numpy 타입을 일반 타입으로 변환
+            # numpy 타입을 일반 타입으로 변환, NaN/Inf은 None (JSON 표준 호환)
             metrics_serializable = {}
             for key, value in metrics.items():
                 if isinstance(value, np.ndarray):
                     metrics_serializable[key] = value.tolist()
-                elif isinstance(value, (np.int64, np.int32, np.float64, np.float32)):
-                    metrics_serializable[key] = float(value)
+                elif isinstance(value, (np.integer, np.floating)):
+                    v = float(value)
+                    metrics_serializable[key] = v if np.isfinite(v) else None
+                elif isinstance(value, float):
+                    metrics_serializable[key] = value if np.isfinite(value) else None
                 else:
                     metrics_serializable[key] = value
 
-            json.dump(metrics_serializable, f, indent=2)
+            json.dump(metrics_serializable, f, indent=2, allow_nan=False)
 
         print(f"✅ 평가 지표 저장: {metrics_file}")
 

@@ -241,56 +241,61 @@ class SolarFeatureEngineer:
         print("✅ 기상 상호작용 특성 생성 완료")
         return df
     
-    def create_target_variable(self, df, demand_pattern='realistic'):
+    def create_target_variable(self, df, demand_pattern='realistic', base_demand_kw=8000.0):
         """
         전력 수요 타겟 변수 생성 (실제 환경에서는 외부 데이터 사용)
-        
+
+        주의: 타겟은 입력 특성(AC_POWER, DC_POWER 등 발전량)과
+        독립적으로 합성되어야 한다. 그렇지 않으면 모델이 타겟을
+        역산할 수 있어 데이터 누수가 발생한다.
+
         Args:
             df (pd.DataFrame): 입력 데이터프레임
             demand_pattern (str): 수요 패턴 타입 ('realistic', 'simple')
-            
+            base_demand_kw (float): 시간대/요일 보정 전의 기본 수요(kW)
+
         Returns:
             pd.DataFrame: 타겟 변수가 추가된 데이터프레임
         """
         print("🎯 전력 수요 타겟 변수 생성 중...")
-        
+
         df = df.copy()
-        
+
         if demand_pattern == 'realistic':
-            # 현실적인 전력 수요 패턴
-            base_demand = df['AC_POWER'] * 1.8  # 기본 수요
-            
-            # 시간대별 패턴
+            # 시간대별 패턴 (아침/저녁 피크, 정오 밸리)
             morning_peak = np.where((df['hour'] >= 7) & (df['hour'] <= 9), 1.4, 1.0)
             evening_peak = np.where((df['hour'] >= 17) & (df['hour'] <= 19), 1.6, 1.0)
             midday_valley = np.where((df['hour'] >= 13) & (df['hour'] <= 15), 0.8, 1.0)
             time_factor = morning_peak * evening_peak * midday_valley
-            
-            # 요일별 패턴
+
+            # 요일별 패턴 (주말 수요 감소)
             weekend_factor = np.where(df['is_weekend'] == 1, 0.7, 1.0)
-            
+
             # 계절별 패턴 (여름철 냉방 수요 증가)
             seasonal_factor = 1 + 0.3 * np.sin(2 * np.pi * df['day_of_year'] / 365 + np.pi/2)
-            
+
             # 기상 영향 (온도가 높을수록 냉방 수요 증가)
             weather_factor = 1 + 0.01 * np.maximum(df['AMBIENT_TEMPERATURE'] - 25, 0)
-            
+
             # 노이즈 추가
             noise_factor = np.random.normal(1, 0.05, len(df))
-            
-            # 최종 전력 수요
+
+            # 최종 전력 수요 — AC_POWER에 의존하지 않음
             df['POWER_DEMAND'] = (
-                base_demand * time_factor * weekend_factor * 
+                base_demand_kw * time_factor * weekend_factor *
                 seasonal_factor * weather_factor * noise_factor
             )
-            
+
         else:
-            # 간단한 패턴
-            df['POWER_DEMAND'] = df['AC_POWER'] * (1.5 + 0.5 * np.random.random(len(df)))
-        
+            # 간단한 패턴 (시간별 sin + 노이즈)
+            hourly_shape = 1.0 + 0.4 * np.sin(2 * np.pi * (df['hour'] - 6) / 24)
+            df['POWER_DEMAND'] = base_demand_kw * hourly_shape * (
+                1.0 + 0.1 * np.random.standard_normal(len(df))
+            )
+
         # 음수값 제거
         df['POWER_DEMAND'] = np.maximum(df['POWER_DEMAND'], 0)
-        
+
         print("✅ 전력 수요 타겟 변수 생성 완료")
         return df
     
@@ -349,41 +354,36 @@ class SolarFeatureEngineer:
         
         return selected_features, feature_importance
     
-    def normalize_features(self, df, feature_cols, target_col='POWER_DEMAND', method='minmax'):
+    def fit_scalers(self, train_df, feature_cols, target_col='POWER_DEMAND', method='minmax'):
         """
-        특성 정규화
-        
+        train 데이터에 스케일러를 fit (val/test는 transform만 적용해야 함).
+
         Args:
-            df (pd.DataFrame): 입력 데이터프레임
+            train_df (pd.DataFrame): 학습 구간 데이터 (결측 없음 가정)
             feature_cols (list): 정규화할 특성 컬럼
             target_col (str): 타겟 변수명
             method (str): 정규화 방법 ('minmax', 'standard')
-            
+
         Returns:
-            tuple: (normalized_features, normalized_target, feature_scaler, target_scaler)
+            tuple: (feature_scaler, target_scaler)
         """
-        print(f"📏 특성 정규화 중 (method: {method})...")
-        
-        # 결측값 처리
-        df_clean = df[feature_cols + [target_col]].ffill().bfill()
-        
-        # 스케일러 선택
         if method == 'standard':
             self.feature_scaler = StandardScaler()
             self.target_scaler = StandardScaler()
         else:
             self.feature_scaler = MinMaxScaler()
             self.target_scaler = MinMaxScaler()
-        
-        # 특성 정규화
-        features_normalized = self.feature_scaler.fit_transform(df_clean[feature_cols])
-        
-        # 타겟 정규화
-        target_normalized = self.target_scaler.fit_transform(df_clean[[target_col]])
-        
-        print(f"✅ 정규화 완료: {len(feature_cols)}개 특성, 1개 타겟")
-        
-        return features_normalized, target_normalized, self.feature_scaler, self.target_scaler
+
+        self.feature_scaler.fit(train_df[feature_cols])
+        self.target_scaler.fit(train_df[[target_col]])
+
+        return self.feature_scaler, self.target_scaler
+
+    def transform_split(self, df, feature_cols, target_col='POWER_DEMAND'):
+        """이미 fit된 스케일러를 사용해 특성/타겟 변환."""
+        features_normalized = self.feature_scaler.transform(df[feature_cols])
+        target_normalized = self.target_scaler.transform(df[[target_col]])
+        return features_normalized, target_normalized
     
     def create_sequences(self, features, target, sequence_length=24):
         """
@@ -436,70 +436,100 @@ class SolarFeatureEngineer:
         plt.tight_layout()
         plt.show()
     
-    def feature_engineering_pipeline(self, df, sequence_length=24, 
-                                   feature_selection_method='correlation'):
+    def feature_engineering_pipeline(self, df, sequence_length=24,
+                                   feature_selection_method='correlation',
+                                   train_ratio=0.7, val_ratio=0.15,
+                                   normalization_method='minmax'):
         """
-        전체 특성 엔지니어링 파이프라인
-        
+        전체 특성 엔지니어링 파이프라인.
+
+        시간 순서 분할(train→val→test) 후 train 구간에서만 스케일러를 fit하여
+        검증/테스트 통계 누수를 방지한다. lag/rolling으로 생긴 결측 행은
+        dropna로 제거한다.
+
         Args:
             df (pd.DataFrame): 입력 데이터프레임
             sequence_length (int): 시퀀스 길이
             feature_selection_method (str): 특성 선택 방법
-            
+            train_ratio (float): 학습 구간 비율
+            val_ratio (float): 검증 구간 비율 (test는 1 - train - val)
+            normalization_method (str): 'minmax' 또는 'standard'
+
         Returns:
-            tuple: (X_sequences, y_sequences, feature_columns, scalers)
+            tuple: (splits, selected_features, scalers)
+                splits: dict {'X_train', 'y_train', 'X_val', 'y_val',
+                              'X_test', 'y_test'}
+                scalers: {'feature_scaler', 'target_scaler'}
         """
         print("🚀 특성 엔지니어링 파이프라인 시작")
         print("="*60)
-        
-        # 1. 시간 특성 생성
+
+        test_ratio = 1.0 - train_ratio - val_ratio
+        if test_ratio <= 0:
+            raise ValueError("train_ratio + val_ratio 가 1.0 미만이어야 합니다.")
+
+        # 1~6. 특성 생성
         df = self.create_time_features(df)
-        
-        # 2. 순환 특성 생성
         df = self.create_cyclical_features(df)
-        
-        # 3. 래그 특성 생성
         df = self.create_lag_features(df)
-        
-        # 4. 롤링 특성 생성
         df = self.create_rolling_features(df)
-        
-        # 5. 발전 효율성 특성 생성
         df = self.create_power_efficiency_features(df)
-        
-        # 6. 기상 상호작용 특성 생성
         df = self.create_weather_interaction_features(df)
-        
+
         # 7. 타겟 변수 생성
         df = self.create_target_variable(df)
-        
-        # 8. 특성 선택
+
+        # 8. 시간순 정렬 및 lag/rolling으로 생긴 결측 제거
+        df = df.sort_values('DATE_TIME').reset_index(drop=True)
+        before = len(df)
+        df = df.dropna().reset_index(drop=True)
+        print(f"🧹 결측 행 제거: {before} → {len(df)} (lag/rolling NaN 포함)")
+
+        # 9. 특성 선택 (전체 분포 기준 — 누수가 아닌, 컬럼 결정용)
         selected_features, feature_importance = self.select_features(
             df, feature_selection_method
         )
-        
-        # 9. 정규화
-        features_normalized, target_normalized, feature_scaler, target_scaler = \
-            self.normalize_features(df, selected_features)
-        
-        # 10. 시퀀스 생성
-        X_sequences, y_sequences = self.create_sequences(
-            features_normalized, target_normalized, sequence_length
-        )
-        
+
+        # 10. 시간 기준 split
+        n = len(df)
+        train_end = int(n * train_ratio)
+        val_end = int(n * (train_ratio + val_ratio))
+        train_df = df.iloc[:train_end]
+        val_df = df.iloc[train_end:val_end]
+        test_df = df.iloc[val_end:]
+        print(f"📂 시간순 분할: train={len(train_df)}, val={len(val_df)}, test={len(test_df)}")
+
+        # 11. 스케일러 fit (train only) 후 각 split 변환
+        self.fit_scalers(train_df, selected_features, method=normalization_method)
+        train_X, train_y = self.transform_split(train_df, selected_features)
+        val_X, val_y = self.transform_split(val_df, selected_features)
+        test_X, test_y = self.transform_split(test_df, selected_features)
+
+        # 12. 각 split 내부에서 시퀀스 생성 (경계 누수 없음)
+        X_train, y_train = self.create_sequences(train_X, train_y, sequence_length)
+        X_val, y_val = self.create_sequences(val_X, val_y, sequence_length)
+        X_test, y_test = self.create_sequences(test_X, test_y, sequence_length)
+
         print("✅ 특성 엔지니어링 파이프라인 완료")
         print(f"📊 최종 결과:")
         print(f"  - 선택된 특성: {len(selected_features)}개")
-        print(f"  - 시퀀스 개수: {len(X_sequences)}개")
         print(f"  - 시퀀스 길이: {sequence_length}")
-        
-        # 중요도 상위 10개 특성 출력
+        print(f"  - 시퀀스 수: train={len(X_train)}, val={len(X_val)}, test={len(X_test)}")
+
         print(f"\n🏆 상위 10개 중요 특성:")
         for i, (feature, importance) in enumerate(feature_importance.head(10).items()):
             print(f"  {i+1:2d}. {feature}: {importance:.4f}")
-        
-        return (X_sequences, y_sequences, selected_features, 
-                {'feature_scaler': feature_scaler, 'target_scaler': target_scaler})
+
+        splits = {
+            'X_train': X_train, 'y_train': y_train,
+            'X_val': X_val, 'y_val': y_val,
+            'X_test': X_test, 'y_test': y_test,
+        }
+        scalers = {
+            'feature_scaler': self.feature_scaler,
+            'target_scaler': self.target_scaler,
+        }
+        return splits, selected_features, scalers
     
     def inverse_transform_target(self, normalized_target):
         """
@@ -515,29 +545,29 @@ class SolarFeatureEngineer:
     
     def transform_new_features(self, df):
         """
-        새로운 데이터에 대해 학습된 스케일러로 특성 변환
-        
+        새로운 데이터에 대해 학습된 스케일러로 특성 변환.
+
+        lag/rolling으로 생기는 결측은 dropna로 제거한다.
+
         Args:
             df (pd.DataFrame): 새로운 데이터
-            
+
         Returns:
             np.array: 변환된 특성
         """
         if not self.feature_columns:
             raise ValueError("특성이 선택되지 않았습니다. fit을 먼저 실행하세요.")
-        
-        # 동일한 특성 엔지니어링 적용
+
         df = self.create_time_features(df)
         df = self.create_cyclical_features(df)
         df = self.create_lag_features(df)
         df = self.create_rolling_features(df)
         df = self.create_power_efficiency_features(df)
         df = self.create_weather_interaction_features(df)
-        
-        # 선택된 특성만 추출하고 정규화
-        df_clean = df[self.feature_columns].ffill().bfill()
+
+        df_clean = df[self.feature_columns].dropna()
         features_normalized = self.feature_scaler.transform(df_clean)
-        
+
         return features_normalized
 
 # 사용 예제
@@ -553,7 +583,9 @@ if __name__ == "__main__":
     
     # 특성 엔지니어링 실행
     engineer = SolarFeatureEngineer()
-    X, y, features, scalers = engineer.feature_engineering_pipeline(df)
-    
+    splits, features, scalers = engineer.feature_engineering_pipeline(df)
+
     print(f"🎉 특성 엔지니어링 완료!")
-    print(f"최종 데이터 크기: X {X.shape}, y {y.shape}")
+    print(f"  - X_train: {splits['X_train'].shape}, y_train: {splits['y_train'].shape}")
+    print(f"  - X_val:   {splits['X_val'].shape},   y_val:   {splits['y_val'].shape}")
+    print(f"  - X_test:  {splits['X_test'].shape},  y_test:  {splits['y_test'].shape}")

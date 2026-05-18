@@ -166,45 +166,50 @@ class SolarPowerPredictionPipeline:
                 self.config['weather_file']
             )
         
-        # 2. 특성 엔지니어링
-        X, y, features, scalers = self.engineer.feature_engineering_pipeline(
+        # 2. 특성 엔지니어링 (시간순 split + train-only fit)
+        splits, features, scalers = self.engineer.feature_engineering_pipeline(
             processed_df,
             sequence_length=self.config['sequence_length'],
-            feature_selection_method=self.config['feature_selection_method']
+            feature_selection_method=self.config['feature_selection_method'],
+            train_ratio=self.config['train_ratio'],
+            val_ratio=self.config['val_ratio'],
+            normalization_method=self.config.get('normalization_method', 'minmax'),
         )
-        
+
         self.processed_data = {
-            'X': X,
-            'y': y,
+            'splits': splits,
             'features': features,
             'scalers': scalers,
             'raw_data': processed_df
         }
-        
+
         print("✅ 데이터 파이프라인 완료")
         return self.processed_data
     
-    def run_model_pipeline(self):
-        """모델 구축 및 학습 파이프라인"""
+    def run_model_pipeline(self, extra_callbacks=None):
+        """모델 구축 및 학습 파이프라인
+
+        Args:
+            extra_callbacks (list[keras.callbacks.Callback] | None):
+                기본 callbacks 외에 추가로 주입할 콜백 (예: SSE progress streaming)
+        """
         print("🧠 모델 파이프라인 시작")
         print("="*60)
-        
+
         if self.processed_data is None:
             raise ValueError("데이터 파이프라인을 먼저 실행하세요.")
-        
-        X, y = self.processed_data['X'], self.processed_data['y']
-        
-        # 1. 데이터 분할
-        X_train, X_val, X_test, y_train, y_val, y_test = self.trainer.prepare_train_data(
-            X, y,
-            train_ratio=self.config['train_ratio'],
-            val_ratio=self.config['val_ratio'],
-            test_ratio=self.config['test_ratio'],
-            shuffle=self.config['shuffle']
-        )
-        
+
+        splits = self.processed_data['splits']
+        X_train, y_train = splits['X_train'], splits['y_train']
+        X_val, y_val = splits['X_val'], splits['y_val']
+        X_test, y_test = splits['X_test'], splits['y_test']
+        # trainer에도 split 정보 보관 (저장/시각화에서 참조 가능)
+        self.trainer.train_data = (X_train, y_train)
+        self.trainer.val_data = (X_val, y_val)
+        self.trainer.test_data = (X_test, y_test)
+
         # 2. 모델 구축
-        input_shape = X.shape[1:]
+        input_shape = X_train.shape[1:]
         
         if self.config['model_type'] == 'basic':
             model = self.builder.build_basic_cnn_lstm(
@@ -242,11 +247,13 @@ class SolarPowerPredictionPipeline:
         )
         
         # 4. 콜백 설정
-        model_save_path = os.path.join(self.output_dir, 'best_model.h5')
+        model_save_path = os.path.join(self.output_dir, 'best_model.keras')
         callbacks = self.builder.create_callbacks(
             patience=self.config['early_stopping_patience'],
             save_path=model_save_path
         )
+        if extra_callbacks:
+            callbacks = list(callbacks) + list(extra_callbacks)
         
         # 5. 모델 학습
         history = self.trainer.train_model(
@@ -254,7 +261,8 @@ class SolarPowerPredictionPipeline:
             epochs=self.config['epochs'],
             batch_size=self.config['batch_size'],
             callbacks=callbacks,
-            verbose=self.config['verbose']
+            verbose=self.config['verbose'],
+            shuffle=self.config.get('shuffle', False),
         )
         
         self.model = model
@@ -318,15 +326,23 @@ class SolarPowerPredictionPipeline:
         # 5. 교차 검증 (설정에서 활성화된 경우)
         if self.config.get('run_cross_validation', False):
             print("\n🔄 교차 검증 실행 중...")
-            
+
             # 간단한 모델 빌더 함수 정의
             def simple_model_builder(input_shape, **kwargs):
                 return self.builder.build_basic_cnn_lstm(input_shape, **kwargs)
-            
+
+            splits = self.processed_data['splits']
+            # 교차검증은 train + val 구간을 합쳐 시간순으로 검증한다 (test는 보존)
+            X_cv = np.concatenate([splits['X_train'], splits['X_val']], axis=0)
+            y_cv = np.concatenate([splits['y_train'], splits['y_val']], axis=0)
             cv_results = self.trainer.cross_validate(
-                simple_model_builder, 
-                self.processed_data['X'], 
-                self.processed_data['y']
+                simple_model_builder,
+                X_cv,
+                y_cv,
+                builder=self.builder,
+                loss=self.config['loss'],
+                optimizer=self.config['optimizer'],
+                learning_rate=self.config['learning_rate'],
             )
             self.results['cross_validation'] = cv_results
         
@@ -340,11 +356,10 @@ class SolarPowerPredictionPipeline:
         
         if self.processed_data is None:
             raise ValueError("데이터 파이프라인을 먼저 실행하세요.")
-        
-        X, y = self.processed_data['X'], self.processed_data['y']
-        
-        # 데이터 분할 (튜닝용)
-        X_train, X_val, _, y_train, y_val, _ = self.trainer.prepare_train_data(X, y)
+
+        splits = self.processed_data['splits']
+        X_train, y_train = splits['X_train'], splits['y_train']
+        X_val, y_val = splits['X_val'], splits['y_val']
         
         # 튜닝할 파라미터 그리드 정의
         param_grid = {
@@ -378,9 +393,11 @@ class SolarPowerPredictionPipeline:
         
         if self.processed_data is None:
             raise ValueError("데이터 파이프라인을 먼저 실행하세요.")
-        
-        X, y = self.processed_data['X'], self.processed_data['y']
-        X_train, X_val, X_test, y_train, y_val, y_test = self.trainer.prepare_train_data(X, y)
+
+        splits = self.processed_data['splits']
+        X_train, y_train = splits['X_train'], splits['y_train']
+        X_val, y_val = splits['X_val'], splits['y_val']
+        X_test, y_test = splits['X_test'], splits['y_test']
         
         ensemble = ModelEnsemble()
         models_info = []
@@ -511,7 +528,7 @@ class SolarPowerPredictionPipeline:
         
         # 2. 모델 저장
         if self.model and self.config.get('save_model', True):
-            model_path = os.path.join(self.output_dir, f'final_model_{timestamp}.h5')
+            model_path = os.path.join(self.output_dir, f'final_model_{timestamp}.keras')
             self.model.save(model_path)
             print(f"✅ 모델 저장: {model_path}")
         
@@ -529,7 +546,11 @@ class SolarPowerPredictionPipeline:
             'timestamp': timestamp,
             'config': self.config,
             'data_info': {
-                'total_samples': len(self.processed_data['X']) if self.processed_data else 0,
+                'total_samples': (
+                    sum(len(self.processed_data['splits'][k])
+                        for k in ('X_train', 'X_val', 'X_test'))
+                    if self.processed_data else 0
+                ),
                 'features_count': len(self.processed_data['features']) if self.processed_data else 0,
                 'sequence_length': self.config['sequence_length']
             },
@@ -549,8 +570,12 @@ class SolarPowerPredictionPipeline:
             'output_directory': self.output_dir
         }
     
-    def run_full_pipeline(self):
-        """전체 파이프라인 실행"""
+    def run_full_pipeline(self, extra_callbacks=None):
+        """전체 파이프라인 실행
+
+        Args:
+            extra_callbacks: run_model_pipeline에 전달할 추가 keras 콜백 (예: SSE)
+        """
         print("🌟 CNN-LSTM 태양광 발전 기반 전력 수요 예측 시스템 시작")
         print("="*80)
         
@@ -572,7 +597,7 @@ class SolarPowerPredictionPipeline:
                 print(f"🏆 최적 하이퍼파라미터 적용됨")
 
             # 3. 모델 파이프라인
-            self.run_model_pipeline()
+            self.run_model_pipeline(extra_callbacks=extra_callbacks)
             
             # 4. 평가 파이프라인
             self.run_evaluation_pipeline()

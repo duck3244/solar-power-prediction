@@ -150,15 +150,26 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
-Plant_1_Generation_Data.csv
-Plant_1_Weather_Sensor_Data.csv
-Plant_2_Generation_Data.csv
-Plant_2_Weather_Sensor_Data.csv
-results/best_model.h5
-results/config_20260302_110354.json
-results/final_model_20260302_110354.h5
-results/results_20260302_110354_history_20260302_110354.csv
-results/results_20260302_110354_metrics_20260302_110354.json
-results/results_20260302_110354_predictions_20260302_110354.csv
-results/summary_20260302_110354.json
-results/training_log.csv
+# 데이터셋 (대용량 CSV)
+backend/Plant_1_Generation_Data.csv
+backend/Plant_1_Weather_Sensor_Data.csv
+backend/Plant_2_Generation_Data.csv
+backend/Plant_2_Weather_Sensor_Data.csv
+
+# 학습 산출물 (타임스탬프 포함)
+backend/results/best_model.keras
+backend/results/final_model_*.keras
+backend/results/final_model_*.h5
+backend/results/config_*.json
+backend/results/results_*_history_*.csv
+backend/results/results_*_metrics_*.json
+backend/results/results_*_predictions_*.csv
+backend/results/summary_*.json
+backend/results/training_log.csv
+backend/training_log.csv
+backend/interactive_dashboard.html
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/

@@ -424,7 +424,7 @@ class CNNLSTMBuilder:
                         reduce_lr_patience=10,
                         min_lr=1e-6,
                         save_best_only=True,
-                        save_path='best_model.h5'):
+                        save_path='best_model.keras'):
         """
         콜백 함수들 생성
         
@@ -642,7 +642,7 @@ class ModelEnsemble:
             filepath_prefix (str): 파일명 접두사
         """
         for i, model in enumerate(self.models):
-            filepath = f"{filepath_prefix}_{i}.h5"
+            filepath = f"{filepath_prefix}_{i}.keras"
             model.save(filepath)
             print(f"모델 {i} 저장: {filepath}")
         
